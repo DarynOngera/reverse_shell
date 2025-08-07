@@ -17,7 +17,7 @@ install:
 # Target: clean - Clean up build files
 clean:
 	rm -rf build dist
-	rm -f client.spec
+	rm -f updater.spec
 
 # Target: listener - Run the listener
 listener:
@@ -25,12 +25,12 @@ listener:
 
 # Target: client - Run the client (for testing)
 client:
-	python3 client.py
+	python3 updater.py
 
 # Target: build-client - Build the client executable for Windows
 build-client:
-	pyinstaller --onefile --windowed --name client client.py
+	pyinstaller --onefile --windowed --name updater updater.py
 
 # Target: run-client - Run the client with specific host, port, and key
 run-client:
-	python3 client.py --host $(HOST) --port $(PORT) --key $(KEY)
+	python3 updater.py --host $(HOST) --port $(PORT) --key $(KEY)
